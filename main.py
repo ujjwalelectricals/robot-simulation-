@@ -14,7 +14,15 @@ class EvolveApp:
     def __init__(self, root:tk.Tk)->None:
         self.root=root; root.title("EVOLVE — Artificial Life Laboratory"); root.geometry("1550x940"); root.minsize(1240,780); root.configure(bg=BG)
         self.world=World(); self.running=True; self.fast=False; self.selected_id=None; self.show_rays=True; self.show_labels=False; self.show_scents=True; self.last=time.perf_counter(); self.fps=0.0
+        self.lineage_archive:dict[int,dict]={}
         self.build(); self.bind_keys(); self.loop()
+
+    def archive_population(self)->None:
+        for r in self.world.population:
+            self.lineage_archive[r.id]={"id":r.id,"sex":r.sex,"generation":r.generation,"parent_ids":r.parent_ids,"fitness":r.fitness,"offspring":r.offspring}
+        if len(self.lineage_archive)>5000:
+            keep=sorted(self.lineage_archive.values(),key=lambda x:(x["generation"],x["id"]),reverse=True)[:5000]
+            self.lineage_archive={item["id"]:item for item in keep}
 
     def build(self)->None:
         st=ttk.Style(); st.theme_use("clam"); st.configure("TButton",padding=7,font=("Segoe UI",9,"bold")); st.configure("TEntry",padding=5); st.configure("TNotebook",background=PANEL); st.configure("TNotebook.Tab",padding=(10,5)); st.configure("TLabel",background=PANEL,foreground=TEXT)
@@ -47,12 +55,13 @@ class EvolveApp:
     def sync(self)->None:self.show_rays=self.rays.get();self.show_labels=self.labels.get();self.show_scents=self.scents.get()
     def toggle(self)->None:self.running=not self.running;self.status.configure(text="● RUNNING" if self.running else "● PAUSED",foreground=ACCENT if self.running else WARN)
     def toggle_fast(self)->None:self.fast=not self.fast
-    def reset(self)->None:self.world.reset();self.selected_id=None;self.running=True;self.status.configure(text="● RUNNING",foreground=ACCENT)
+    def reset(self)->None:self.world.reset();self.lineage_archive.clear();self.selected_id=None;self.running=True;self.status.configure(text="● RUNNING",foreground=ACCENT)
     def apply(self)->None:
         try:self.world.configure(**{k:(int(v) if k!="mutation" else float(v)) for k,v in ((key,self.vars[key].get()) for key in self.vars)});self.reset()
         except ValueError:messagebox.showerror("Invalid settings","Enter valid numeric settings.")
     def next_generation(self)->None:
         self.running=False;start=self.world.generation
+        self.archive_population()
         for _ in range(self.world.experiment["episode"]//10+3):
             self.world.step(10)
             if self.world.generation!=start:break
@@ -92,7 +101,6 @@ class EvolveApp:
     def select_robot(self,event:tk.Event)->None:
         x,y=self.canvas_to_world(event.x,event.y);r=min(self.world.population,key=lambda q:(q.x-x)**2+(q.y-y)**2,default=None)
         if r and math.hypot(r.x-x,r.y-y)<35:self.selected_id=r.id
-
     def draw(self)->None:
         c=self.canvas;c.delete("all");cw,ch=max(1,c.winfo_width()),max(1,c.winfo_height())
         for gx in range(0,self.world.width+1,50):x,_=self.world_to_canvas(gx,0);c.create_line(x,0,x,ch,fill="#10232e")
@@ -118,55 +126,50 @@ class EvolveApp:
             if sel and self.show_rays:
                 for ray in r.genome.rays:
                     ex,ey=self.world_to_canvas(r.x+math.cos(r.angle+ray.angle)*ray.length,r.y+math.sin(r.angle+ray.angle)*ray.length);c.create_line(x,y,ex,ey,fill="#2b6678",dash=(3,5))
-
     def bars(self,canvas:tk.Canvas,values:list[float],labels:list[str])->None:
-        canvas.delete("all");w=max(1,canvas.winfo_width());h=max(1,canvas.winfo_height());n=len(values);gap=8;bw=max(18,(w-gap*(n+1))/n);top=20
+        canvas.delete("all");w=max(1,canvas.winfo_width());h=max(1,canvas.winfo_height());n=len(values);gap=8;bw=max(18,(w-gap*(n+1))/n)
         for i,(v,label) in enumerate(zip(values,labels)):
-            x=gap+i*(bw+gap);barh=max(2,(h-55)*clamp(v,0,1));canvas.create_rectangle(x,h-25-barh,x+bw,h-25,fill=ACCENT,outline="");canvas.create_text(x+bw/2,h-14,text=label,fill=MUTED,font=("Segoe UI",8));canvas.create_text(x+bw/2,h-31-barh,text=f"{v:.2f}",fill=TEXT,font=("Consolas",8))
-
+            x=gap+i*(bw+gap);barh=max(2,(h-55)*max(0,min(1,v)));canvas.create_rectangle(x,h-25-barh,x+bw,h-25,fill=ACCENT,outline="");canvas.create_text(x+bw/2,h-14,text=label,fill=MUTED,font=("Segoe UI",8));canvas.create_text(x+bw/2,h-31-barh,text=f"{v:.2f}",fill=TEXT,font=("Consolas",8))
     def update_brain(self)->None:
         r=self.selected();
-        if not r:
-            self.brain_canvas.delete("all");self.inspector.configure(state="normal");self.inspector.delete("1.0","end");self.inspector.insert("1.0","Select a robot to map its live brain.");self.inspector.configure(state="disabled");return
-        state,codes,cue,internal=r.observe(self.world); h,t,fa,fe,cu,so,sl=r.drives(self.world); self.bars(self.brain_canvas,internal,["HUN","THI","FAT","FEAR","CUR","SOC","SLEEP"])
-        b=r.brain; vals=b.values(state); preferred=ACTIONS[max(range(len(vals)),key=vals.__getitem__)]; lines=[f"ROBOT #{r.id} • {r.sex.upper()} • GEN {r.generation}",f"body radius={r.radius():.1f}  age={r.age}  health={r.health:.1f}",f"energy={r.energy:.1f}/{r.genome.effective_max_energy():.1f} hydration={r.hydration:.1f}/{r.genome.effective_max_hydration():.1f}",f"fitness={r.fitness:.2f} food={r.food_eaten} water={r.water_found} damage={r.damage_taken:.1f}","","SENSES",f"cue={cue} codes={codes}","","BRAIN STATE",f"learned states={len(b.q)} associations={len(b.associations)}",f"working={len(b.working)} episodic={len(b.episodic)}",f"confidence={b.confidence:.2f} stress={b.stress:.2f} arousal={b.arousal:.2f}",f"valence={b.valence:.2f} exploration={b.epsilon:.2f}",f"preferred action={preferred}","","GENOME",f"size={r.genome.body_size:.2f} speed={r.genome.speed:.2f} efficiency={r.genome.efficiency:.2f}",f"learning α={r.genome.learning_rate:.3f} discount γ={r.genome.discount:.3f} memory={r.genome.memory_capacity}",f"rays={[(round(x.angle,2),round(x.length)) for x in r.genome.rays]}"]
+        if not r:self.brain_canvas.delete("all");self.inspector.configure(state="normal");self.inspector.delete("1.0","end");self.inspector.insert("1.0","Select a robot to map its live brain.");self.inspector.configure(state="disabled");return
+        state,codes,cue,_=r.observe(self.world);h,t,fa,fe,cu,so,sl=r.drives(self.world);self.bars(self.brain_canvas,[h,t,fa,fe,cu,so,sl],["HUN","THI","FAT","FEAR","CUR","SOC","SLEEP"]);b=r.brain;vals=b.values(state);preferred=ACTIONS[max(range(len(vals)),key=vals.__getitem__)];lines=[f"ROBOT #{r.id} • {r.sex.upper()} • GEN {r.generation}",f"age={r.age} health={r.health:.1f} energy={r.energy:.1f}/{r.genome.effective_max_energy():.1f}",f"hydration={r.hydration:.1f}/{r.genome.effective_max_hydration():.1f}",f"fitness={r.fitness:.2f} food={r.food_eaten} water={r.water_found} damage={r.damage_taken:.1f}","","SENSORY ATTENTION",f"cue={cue} codes={codes}","","BRAIN / MEMORY",f"states={len(b.q)} associations={len(b.associations)}",f"working={len(b.working)} episodic={len(b.episodic)}",f"confidence={b.confidence:.2f} stress={b.stress:.2f} arousal={b.arousal:.2f}",f"valence={b.valence:.2f} exploration={b.epsilon:.2f}",f"preferred action={preferred}","","EVOLVABLE BODY",f"size={r.genome.body_size:.2f} speed={r.genome.speed:.2f} efficiency={r.genome.efficiency:.2f}",f"learning α={r.genome.learning_rate:.3f} discount γ={r.genome.discount:.3f} memory={r.genome.memory_capacity}",f"rays={[(round(x.angle,2),round(x.length)) for x in r.genome.rays]}"]
         self.inspector.configure(state="normal");self.inspector.delete("1.0","end");self.inspector.insert("1.0","\n".join(lines));self.inspector.configure(state="disabled")
-
-    def lineage_chain(self,r:Robot)->list[Robot]:
-        lookup={x.id:x for x in self.world.population}; chain=[r]; seen={r.id}
-        for _ in range(4):
-            a,b=chain[-1].parent_ids
-            parent=lookup.get(a) or lookup.get(b)
-            if not parent or parent.id in seen:break
-            chain.append(parent);seen.add(parent.id)
-        return chain
-
+    def lineage_lookup(self,robot_id:int)->dict|None:
+        current=next((r for r in self.world.population if r.id==robot_id),None)
+        if current:return {"id":current.id,"sex":current.sex,"generation":current.generation,"parent_ids":current.parent_ids,"fitness":current.fitness,"offspring":current.offspring}
+        return self.lineage_archive.get(robot_id)
     def update_lineage(self)->None:
         r=self.selected();self.lineage.delete("all");self.lineage_text.configure(state="normal");self.lineage_text.delete("1.0","end")
         if not r:self.lineage_text.insert("1.0","Select an evolved robot to inspect its lineage.");self.lineage_text.configure(state="disabled");return
-        chain=self.lineage_chain(r);w=max(1,self.lineage.winfo_width());y=35
+        chain=[r];seen={r.id}
+        while len(chain)<6:
+            pid=next((p for p in chain[-1].parent_ids if p),0)
+            parent=self.lineage_lookup(pid) if pid else None
+            if not parent or parent["id"] in seen:break
+            chain.append(parent);seen.add(parent["id"])
+        w=max(1,self.lineage.winfo_width());y=48;gap=min(105,max(65,(w-80)/max(1,len(chain)-1)))
         for i,node in enumerate(chain):
-            x=35+i*min(90,(w-70)/max(1,len(chain)-1));fill="#7bbcf2" if node.sex=="male" else "#e78bb7";self.lineage.create_oval(x-18,y-18,x+18,y+18,fill=fill,outline=ACCENT if node.id==r.id else "#2a4351",width=2);self.lineage.create_text(x,y+32,text=f"#{node.id}\nG{node.generation}",fill=TEXT,font=("Segoe UI",8));
-            if i+1<len(chain):self.lineage.create_line(x+18,y,x+min(90,(w-70)/max(1,len(chain)-1))-18,y,fill="#3f6878",arrow="last")
-        lines=[f"SELECTED #{r.id}",f"parents={r.parent_ids}",f"generation={r.generation}",f"offspring={r.offspring}","","ANCESTRAL PATH"]+[f"#{n.id}  G{n.generation}  {n.sex}  fitness={n.fitness:.2f}" for n in chain];self.lineage_text.insert("1.0","\n".join(lines));self.lineage_text.configure(state="disabled")
-
+            x=35+i*gap;fill="#7bbcf2" if node["sex"]=="male" else "#e78bb7";self.lineage.create_oval(x-18,y-18,x+18,y+18,fill=fill,outline=ACCENT if i==0 else "#2a4351",width=2);self.lineage.create_text(x,y+34,text=f"#{node['id']}\nG{node['generation']}",fill=TEXT,font=("Segoe UI",8));
+            if i+1<len(chain):self.lineage.create_line(x+18,y,x+gap-18,y,fill="#3f6878",arrow="last")
+        lines=[f"SELECTED #{r.id}",f"parents={r.parent_ids}",f"generation={r.generation}",f"offspring={r.offspring}","","ANCESTRAL PATH"]+[f"#{n['id']}  G{n['generation']}  {n['sex']}  fitness={n.get('fitness',0):.2f}" for n in chain];self.lineage_text.insert("1.0","\n".join(lines));self.lineage_text.configure(state="disabled")
     def update_graph(self)->None:
         c=self.graph;c.delete("all");w=max(1,c.winfo_width());h=max(1,c.winfo_height());hist=self.world.history[-50:]
         if not hist:return
-        series=[("fitness",lambda x:x.get("best_fitness",0)),("food",lambda x:x.get("food",0)),("predators",lambda x:x.get("predators",0))];mx=max(1,max(max(abs(fn(row)) for row in hist) for _,fn in series)); step=(w-45)/max(1,len(hist)-1)
+        series=[("fitness",lambda x:x.get("best_fitness",0)),("food",lambda x:x.get("food",0)),("predators",lambda x:x.get("predators",0))];mx=max(1,max(max(abs(fn(row)) for row in hist) for _,fn in series));step=(w-45)/max(1,len(hist)-1)
         for idx,(name,fn) in enumerate(series):
             points=[]
             for i,row in enumerate(hist):points += [45+i*step,h-20-(fn(row)/mx)*(h-45)]
             c.create_line(*points,fill=[ACCENT,FOOD,DANGER][idx],width=2);c.create_text(8,20+idx*20,text=name,anchor="w",fill=[ACCENT,FOOD,DANGER][idx],font=("Segoe UI",8))
         c.create_line(40,10,40,h-20,fill="#36515e");c.create_line(40,h-20,w,h-20,fill="#36515e")
-
     def update_metrics(self)->None:
-        s=self.world.summary();lines=[f"GENERATION       {s['generation']}",f"ALIVE            {s['alive']:>3}/{s['population']}",f"BEST FITNESS     {s['best_fitness']:>8.2f}",f"AVG FITNESS      {s['avg_fitness']:>8.2f}",f"LEARNED STATES   {s['known_states']:>8}",f"FOUNDERS BRED    {'YES' if s['founders_established'] else 'NO'}",f"NIGHT FACTOR     {self.world.night_factor():>8.2f}",f"SCENT MARKERS    {len(self.world.scents):>8}",f"FPS              {self.fps:>8.1f}","","Controls: SPACE pause • F fast • N generation • R reset"]
+        s=self.world.summary();lines=[f"GENERATION       {s['generation']}",f"ALIVE            {s['alive']:>3}/{s['population']}",f"BEST FITNESS     {s['best_fitness']:>8.2f}",f"AVG FITNESS      {s['avg_fitness']:>8.2f}",f"LEARNED STATES   {s['known_states']:>8}",f"FOUNDERS BRED    {'YES' if s['founders_established'] else 'NO'}",f"NIGHT FACTOR     {self.world.night_factor():>8.2f}",f"SCENT MARKERS    {len(self.world.scents):>8}",f"ARCHIVED LINEAGE {len(self.lineage_archive):>8}",f"FPS              {self.fps:>8.1f}","","Controls: SPACE pause • F fast • N generation • R reset"]
         self.metrics.configure(state="normal");self.metrics.delete("1.0","end");self.metrics.insert("1.0","\n".join(lines));self.metrics.configure(state="disabled")
-
     def loop(self)->None:
         now=time.perf_counter();self.fps=1/max(1e-6,now-self.last);self.last=now
-        if self.running:self.world.step(20 if self.fast else 3)
+        if self.running:
+            self.archive_population()
+            self.world.step(20 if self.fast else 3)
         self.draw();self.update_brain();self.update_lineage();self.update_graph();self.update_metrics();self.root.after(25 if self.fast else 45,self.loop)
 
 
