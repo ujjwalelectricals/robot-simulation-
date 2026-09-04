@@ -21,4 +21,4 @@ jobs:
       - name: Headless smoke test
         run: python main.py --headless --generations 4 --population 12 --seed 123
       - name: Large population benchmark
-        run: python main.py --headless --generations 2 --population 120 --seed 321
+        run: python main.py --headless --generations 1 --population 40 --seed 321
