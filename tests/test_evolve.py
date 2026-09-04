@@ -1,13 +1,20 @@
+import json
+import random
 import unittest
 
-from evolve_core import Genome, World
+from evolve_core_v2 import Genome, World
 
 
 class EvolveCoreTests(unittest.TestCase):
     def test_world_is_deterministic_for_same_seed(self):
-        a = World(seed=99)
-        b = World(seed=99)
-        self.assertEqual([(r.x, r.y) for r in a.population[:5]], [(r.x, r.y) for r in b.population[:5]])
+        a, b = World(seed=99), World(seed=99)
+        self.assertEqual([(r.x, r.y, r.sex) for r in a.population], [(r.x, r.y, r.sex) for r in b.population])
+
+    def test_starts_with_exactly_one_male_and_one_female(self):
+        world = World(seed=1)
+        self.assertEqual(len(world.population), 2)
+        self.assertEqual([r.sex for r in world.population], ["male", "female"])
+        self.assertFalse(world.founders_established)
 
     def test_brain_learns_and_memory_grows(self):
         world = World(seed=2)
@@ -18,26 +25,30 @@ class EvolveCoreTests(unittest.TestCase):
         self.assertGreaterEqual(len(robot.brain.q), before)
         self.assertGreater(len(robot.brain.working), 0)
 
-    def test_robot_can_die_and_new_generation_is_created(self):
+    def test_founder_death_resets_before_reproduction(self):
         world = World(seed=3)
-        world.experiment["population"] = 6
-        world.experiment["food"] = 1
-        world.experiment["water"] = 1
-        world.experiment["hazards"] = 20
-        world.experiment["predators"] = 6
-        world.experiment["episode"] = 80
-        world.reset()
-        first_generation = world.generation
-        for _ in range(20):
-            world.step(10)
-            if world.generation > first_generation:
-                break
-        self.assertGreaterEqual(world.generation, first_generation)
-        self.assertTrue(len(world.population) == world.experiment["population"])
+        old_id = world.population[0].id
+        self.assertTrue(world.kill_robot(old_id, "test"))
+        world.step(1)
+        self.assertEqual(world.generation, 1)
+        self.assertEqual(len(world.population), 2)
+        self.assertEqual({r.sex for r in world.population}, {"male", "female"})
+        self.assertNotEqual(world.population[0].id, old_id)
+
+    def test_founders_reproduce_into_configured_population(self):
+        world = World(seed=4)
+        world.experiment["population"] = 8
+        male, female = world.population
+        male.age = female.age = 60
+        male.energy = female.energy = 80
+        male.hydration = female.hydration = 80
+        world.step(1)
+        self.assertTrue(world.founders_established)
+        self.assertEqual(len(world.population), 8)
+        self.assertTrue(any(r.generation == 1 for r in world.population))
 
     def test_genome_mutation_stays_in_bounds(self):
-        g = Genome()
-        child = g.mutate(__import__('random').Random(4), 1.0)
+        child = Genome().mutate(random.Random(4), 1.0)
         self.assertTrue(0.8 <= child.speed <= 4.0)
         self.assertTrue(45 <= child.vision <= 180)
         self.assertTrue(0.0 <= child.curiosity <= 1.0)
@@ -46,9 +57,7 @@ class EvolveCoreTests(unittest.TestCase):
         self.assertTrue(0.03 <= child.learning_rate <= 0.4)
 
     def test_experiment_summary_is_serializable(self):
-        import json
-        summary = World(seed=10).summary()
-        json.dumps(summary)
+        json.dumps(World(seed=10).summary())
 
 
 if __name__ == "__main__":
