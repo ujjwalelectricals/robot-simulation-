@@ -33,7 +33,9 @@ class EvolveCoreTests(unittest.TestCase):
         self.assertEqual(world.generation, 1)
         self.assertEqual(len(world.population), 2)
         self.assertEqual({r.sex for r in world.population}, {"male", "female"})
-        self.assertNotEqual(world.population[0].id, old_id)
+        self.assertEqual(world.population[0].id, 1)
+        self.assertEqual(world.population[1].id, 2)
+        self.assertFalse(world.founders_established)
 
     def test_founders_reproduce_into_configured_population(self):
         world = World(seed=4)
@@ -45,7 +47,8 @@ class EvolveCoreTests(unittest.TestCase):
         world.step(1)
         self.assertTrue(world.founders_established)
         self.assertEqual(len(world.population), 8)
-        self.assertTrue(any(r.generation == 1 for r in world.population))
+        self.assertEqual(world.population[0].sex, "male")
+        self.assertEqual(world.population[1].sex, "female")
 
     def test_genome_mutation_stays_in_bounds(self):
         child = Genome().mutate(random.Random(4), 1.0)
