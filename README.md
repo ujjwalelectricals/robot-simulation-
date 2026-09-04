@@ -1,40 +1,67 @@
-# Evolve — 2D Artificial Life Robot Simulator
+# EVOLVE — 2D Artificial Life Robot Simulator
 
-A self-contained 2D artificial-life experiment where robots are born with limited senses, learn from consequences, survive or die, and pass selected traits to future generations.
+A self-contained artificial-life laboratory where a robot is born with a small set of senses and drives, learns from consequences, survives or dies, and passes selected traits to future generations.
 
-## Core idea
+## The core experiment
 
-The robot does **not** receive a map, a goal description, object names, or a hidden "simulation mode". It only receives compact sensory signals and internal body signals. Actions have consequences:
+The robot is **not told that it is inside a simulation**. Its brain receives only local sensory observations and internal body signals. There is no privileged simulation flag, map, object label, or hidden answer key.
 
-- useful discoveries produce positive reward
-- dangerous actions produce negative reward
-- starvation and repeated failures reduce survival
-- successful robots reproduce
-- offspring inherit and mutate a small genome
-- each robot's short-term memory belongs to that lifetime
-- learned behavior can be compared across generations
+Its world creates consequences:
 
-## Implemented systems
+- Food and water satisfy biological drives and produce positive reward.
+- Hazards and predators cause damage and strong negative reward.
+- Boundary collisions are costly.
+- Rest reduces fatigue pressure.
+- Successful individuals become parents.
+- Offspring inherit and mutate behavioral traits.
+- Short-term/episodic memories belong to the lifetime; the inherited genome survives through generations.
 
-1. 2D world, physics-lite movement and robot lifecycle
-2. Ray-style local sensors
-3. Decision-making brain with tabular Q-learning
-4. Reward and punishment engine
-5. Online learning from experience
-6. Short-term episodic memory
-7. Age, health, energy, hunger, starvation and death/restart
-8. Genome with mutation
-9. Reproduction and inheritance
-10. Fitness-based evolution
-11. Food, hazards, walls and optional predators
-12. Generation history, replay snapshots and analytics
-13. Experiment controls and repeatable seeded runs
-14. Headless fast simulation for large populations
-15. Desktop laboratory GUI with live stats
+## Dog-inspired artificial brain
+
+This is **not a biological dog brain**. It is a compact artificial architecture inspired by useful animal-learning behaviors:
+
+- hunger, thirst and fatigue drives
+- fear/stress and curiosity
+- approach vs avoidance bias
+- attention through five directional sensory rays
+- associative Q-learning
+- working memory and episodic memories
+- confidence and emotional valence signals
+- exploration/exploitation balance
+- social-contact signal
+
+The design goal is emergent behavior from limited information, rewards, memory and survival pressure.
+
+## Experimenter powers
+
+The desktop laboratory gives you direct control over the experiment without changing the robot's internal rules:
+
+- pause/resume simulation
+- run fast mode
+- force a generation transition
+- spawn food, water, hazards and predators at the mouse position
+- manually reward or punish the selected robot
+- heal a selected robot or restore energy/hydration
+- select a robot and inspect its body state, drives, brain and genome
+- show/hide sensory rays and robot labels
+- change population, resources, hazards, predators, mutation and episode length
+- save an experiment snapshot as JSON
+
+## Evolution loop
+
+```text
+Birth → Sense → Decide → Act → Consequence → Learn → Survive/Die
+                         ↓
+                 Fitness + Memory
+                         ↓
+              Selection + Mutation
+                         ↓
+                 Next Generation
+```
 
 ## Run on Windows
 
-Install Python 3.10+ and run:
+Python 3.10+ is enough. No pip install is required.
 
 ```powershell
 python main.py
@@ -46,25 +73,44 @@ Or double-click:
 run.bat
 ```
 
-No pip install is required.
+For a fast, GUI-free experiment:
+
+```powershell
+python main.py --headless --generations 20 --population 250 --seed 42
+```
 
 ## Controls
 
-- **Space** — start/pause
-- **R** — new experiment
-- **F** — toggle fast mode
-- **N** — advance one generation
+- **Space** — pause/resume
+- **F** — fast mode
+- **N** — force next generation
+- **R** — reset experiment
 - **Esc** — quit
+- **Left click robot** — inspect that robot
 
-The GUI also contains buttons for pause/resume, generation advance, reset, and fast simulation.
+## Project phases
 
-## Experiments
+The repository is designed to grow through these stages:
 
-Use the controls to change population size, mutation rate, food, hazards, predators, learning rate, exploration rate, and episode length. A fixed random seed can be used for repeatable experiments.
+1. World + movement ✅
+2. Sensors ✅
+3. Brain ✅
+4. Reward system ✅
+5. Learning ✅
+6. Memory ✅
+7. Death/restart ✅
+8. Genetics ✅
+9. Reproduction ✅
+10. Evolution ✅
+11. Predators/resources/ecosystem ✅
+12. Generational analytics ✅
+13. Repeatable experiments ✅
+14. Large-population optimization 🚧
+15. Polished simulation laboratory 🚧
 
-## Design philosophy
+## Design principle
 
-The project is deliberately dependency-free. The simulator is a research toy and educational experiment, not a claim that the agents are conscious or sentient. The robot's "belief" that it is in a world is represented by the fact that the policy only receives its body/world observations; there is no special simulation flag exposed to the brain.
+We are building an artificial-life experiment, not claiming consciousness or human-level intelligence. The interesting part is watching useful behavior emerge from a simple body, limited senses, learning, memory, reward, punishment, survival and evolution.
 
 ## License
 
