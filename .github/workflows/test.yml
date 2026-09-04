@@ -15,10 +15,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile check
-        run: python -m compileall -q main.py evolve_core.py tests
+        run: python -m compileall -q main.py evolve_engine.py evolve_core.py tests
       - name: Unit tests
         run: python -m unittest discover -s tests -v
       - name: Headless smoke test
         run: python main.py --headless --generations 4 --population 12 --seed 123
-      - name: Larger headless benchmark
-        run: python main.py --headless --generations 2 --population 100 --seed 321
+      - name: Large population benchmark
+        run: python main.py --headless --generations 2 --population 180 --seed 321
