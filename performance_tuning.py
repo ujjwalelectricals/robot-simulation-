@@ -52,6 +52,13 @@ def _local_scent(world: World, x: float, y: float, kind: str) -> float:
 
 
 def _reproduce_founders(world: World) -> bool:
+    """Gradual founder reproduction with cooldown.
+    
+    This patched version adds children one at a time instead of instantly
+    filling to target population, which improves performance and creates
+    more natural population growth. The original engine instantly creates
+    all children at once when founders are ready.
+    """
     if world.founders_established or not world.founders_ready():
         return False
 
@@ -77,7 +84,7 @@ def _reproduce_founders(world: World) -> bool:
     male.offspring += 1
     female.offspring += 1
     world._founder_last_reproduction_tick = world.tick
-
+    
     if len(world.population) >= target:
         world.founders_established = True
     return True
