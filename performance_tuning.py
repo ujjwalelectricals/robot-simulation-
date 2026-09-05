@@ -55,7 +55,9 @@ def _reproduce_founders(world: World) -> bool:
     if world.founders_established or not world.founders_ready():
         return False
 
-    last_tick = getattr(world, "_founder_last_reproduction_tick", -10**9)
+    # A reset starts a fresh founder clock so the first birth is never delayed by
+    # the cooldown timestamp from a previous experiment.
+    last_tick = -_FOUNDER_REPRODUCTION_COOLDOWN if world.tick == 0 else getattr(world, "_founder_last_reproduction_tick", -10**9)
     if world.tick - last_tick < _FOUNDER_REPRODUCTION_COOLDOWN:
         return False
 
