@@ -1,7 +1,1 @@
-__pycache__/
-*.pyc
-.venv/
-.env
-build/
-dist/
-*.log
+(performance_tuning.py is a source file, and there are no build artifacts, dependencies, or temp files in the changes)
