@@ -51,14 +51,6 @@ def _local_scent(world: World, x: float, y: float, kind: str) -> float:
     return best
 
 
-def _deposit_scent(world: World, x: float, y: float, kind: str, strength: float) -> None:
-    # Match the engine's behavior, then invalidate the cache so same-tick rays see it.
-    world.scents.append(world.__class__.__dict__.get("_ScentType", lambda *_args: None)(x, y, kind, max(0.0, min(1.5, strength))))
-    if len(world.scents) > 1000:
-        world.scents = world.scents[-1000:]
-    world._scent_cache_tick = -1
-
-
 def _reproduce_founders(world: World) -> bool:
     if world.founders_established or not world.founders_ready():
         return False
@@ -90,7 +82,6 @@ def _reproduce_founders(world: World) -> bool:
 
 
 def _invalidate_on_deposit(world: World, x: float, y: float, kind: str, strength: float) -> None:
-    # Preserve the original engine method but force cache invalidation afterward.
     original = getattr(World, "_original_deposit_scent", None)
     if original is not None:
         original(world, x, y, kind, strength)
@@ -102,7 +93,6 @@ def install() -> None:
     if getattr(World, "_performance_patch_installed", False):
         return
 
-    # Preserve original methods before replacing them.
     World._original_deposit_scent = World.deposit_scent
     World.local_scent = _local_scent  # type: ignore[method-assign]
     World.deposit_scent = _invalidate_on_deposit  # type: ignore[method-assign]
