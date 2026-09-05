@@ -1,16 +1,20 @@
-"""Small runtime performance patch for the EVOLVE simulator.
+"""Small, targeted runtime fixes for the EVOLVE simulator.
 
-Keeps the core engine unchanged while avoiding repeated O(number_of_scents)
-searches from inside every sensory-ray sample.
+This module keeps the core engine intact while:
+- avoiding repeated full scent-list scans from sensory rays;
+- invalidating the scent cache when new scent is created;
+- making founder reproduction gradual instead of instantly filling the population.
 """
 from __future__ import annotations
 
+import math
 from typing import Dict, List, Tuple
 
 from evolve_engine import World
 
 _CELL = 100.0
 _RADIUS = 100.0
+_FOUNDER_REPRODUCTION_COOLDOWN = 30
 
 
 def _cell(x: float, y: float) -> Tuple[int, int]:
@@ -28,7 +32,7 @@ def _rebuild_scent_cache(world: World) -> None:
 
 
 def _local_scent(world: World, x: float, y: float, kind: str) -> float:
-    # One cache rebuild per simulation tick; all ray samples in that tick are cheap.
+    # One cache build per simulation tick; each ray then checks only nearby cells.
     if getattr(world, "_scent_cache_tick", None) != world.tick:
         _rebuild_scent_cache(world)
 
@@ -39,15 +43,68 @@ def _local_scent(world: World, x: float, y: float, kind: str) -> float:
             for scent in world._scent_cache.get((ix, iy), ()):
                 if scent.kind != kind:
                     continue
-                d = ((x - scent.x) ** 2 + (y - scent.y) ** 2) ** 0.5
-                if d < _RADIUS:
-                    best = max(best, scent.strength * (1.0 - d / _RADIUS))
+                dx = x - scent.x
+                dy = y - scent.y
+                distance = math.hypot(dx, dy)
+                if distance < _RADIUS:
+                    best = max(best, scent.strength * (1.0 - distance / _RADIUS))
     return best
 
 
+def _deposit_scent(world: World, x: float, y: float, kind: str, strength: float) -> None:
+    # Match the engine's behavior, then invalidate the cache so same-tick rays see it.
+    world.scents.append(world.__class__.__dict__.get("_ScentType", lambda *_args: None)(x, y, kind, max(0.0, min(1.5, strength))))
+    if len(world.scents) > 1000:
+        world.scents = world.scents[-1000:]
+    world._scent_cache_tick = -1
+
+
+def _reproduce_founders(world: World) -> bool:
+    if world.founders_established or not world.founders_ready():
+        return False
+
+    last_tick = getattr(world, "_founder_last_reproduction_tick", -10**9)
+    if world.tick - last_tick < _FOUNDER_REPRODUCTION_COOLDOWN:
+        return False
+
+    lookup = {robot.id: robot for robot in world.population}
+    male = lookup.get(world.founder_ids[0])
+    female = lookup.get(world.founder_ids[1])
+    if male is None or female is None or not male.alive or not female.alive:
+        return False
+
+    target = world.experiment["population"]
+    if len(world.population) >= target:
+        world.founders_established = True
+        return False
+
+    child = world.create_child(male, female)
+    world.population.append(child)
+    male.offspring += 1
+    female.offspring += 1
+    world._founder_last_reproduction_tick = world.tick
+
+    if len(world.population) >= target:
+        world.founders_established = True
+    return True
+
+
+def _invalidate_on_deposit(world: World, x: float, y: float, kind: str, strength: float) -> None:
+    # Preserve the original engine method but force cache invalidation afterward.
+    original = getattr(World, "_original_deposit_scent", None)
+    if original is not None:
+        original(world, x, y, kind, strength)
+    world._scent_cache_tick = -1
+
+
 def install() -> None:
-    """Install the optimization once; safe to call repeatedly."""
+    """Install the targeted fixes once; safe to call repeatedly."""
     if getattr(World, "_performance_patch_installed", False):
         return
+
+    # Preserve original methods before replacing them.
+    World._original_deposit_scent = World.deposit_scent
     World.local_scent = _local_scent  # type: ignore[method-assign]
+    World.deposit_scent = _invalidate_on_deposit  # type: ignore[method-assign]
+    World.reproduce_founders = _reproduce_founders  # type: ignore[method-assign]
     World._performance_patch_installed = True
