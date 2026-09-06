@@ -125,47 +125,40 @@ def _ray_code(self: Robot, world: World, angle: float, length: float) -> int:
         t_delta_y = math.inf
 
     t = 0.0
-    # A ray can cross only a handful of 55px cells at the current max length.
     max_cells = int(math.ceil(length / cell_size)) + 6
-    seen_ids: set[int] = set()
 
     for _ in range(max_cells):
         cell_end = min(length, t_max_x, t_max_y)
-        candidate_buckets = []
-        # Include neighboring buckets because an object's circle can overlap a
-        # cell boundary even though its center is stored in only one bucket.
-        for bx in range(cell_x - 1, cell_x + 2):
-            for by in range(cell_y - 1, cell_y + 2):
-                candidate_buckets.append(spatial.cells.get((bx, by), ()))
-
         best_t: Optional[float] = None
         best_code = 0
-        for bucket in candidate_buckets:
-            for obj in bucket:
-                identity = id(obj)
-                if identity in seen_ids or obj is self:
-                    continue
-                seen_ids.add(identity)
-                if not getattr(obj, "alive", True) and not isinstance(obj, Shelter):
-                    continue
-                if isinstance(obj, Predator):
-                    radius, code = 12.0, 3
-                elif isinstance(obj, Hazard):
-                    radius, code = obj.radius, 2
-                elif isinstance(obj, Food):
-                    radius, code = 9.0, 1
-                elif isinstance(obj, Water):
-                    radius, code = 9.0, 5
-                elif isinstance(obj, Robot):
-                    radius, code = 10.0, 6
-                elif isinstance(obj, Shelter):
-                    radius, code = obj.radius, 7
-                else:
-                    continue
-                hit_t = _ray_hit_t(x0, y0, cos_a, sin_a, obj.x, obj.y, radius, length)
-                if hit_t is not None and hit_t <= cell_end + 1e-6 and (best_t is None or hit_t < best_t):
-                    best_t = hit_t
-                    best_code = code
+
+        # Check the current cell and its neighbors because object centers live in
+        # a single bucket while their collision radius can cross cell boundaries.
+        for bx in range(cell_x - 1, cell_x + 2):
+            for by in range(cell_y - 1, cell_y + 2):
+                for obj in spatial.cells.get((bx, by), ()):
+                    if obj is self:
+                        continue
+                    if not getattr(obj, "alive", True) and not isinstance(obj, Shelter):
+                        continue
+                    if isinstance(obj, Predator):
+                        radius, code = 12.0, 3
+                    elif isinstance(obj, Hazard):
+                        radius, code = obj.radius, 2
+                    elif isinstance(obj, Food):
+                        radius, code = 9.0, 1
+                    elif isinstance(obj, Water):
+                        radius, code = 9.0, 5
+                    elif isinstance(obj, Robot):
+                        radius, code = 10.0, 6
+                    elif isinstance(obj, Shelter):
+                        radius, code = obj.radius, 7
+                    else:
+                        continue
+                    hit_t = _ray_hit_t(x0, y0, cos_a, sin_a, obj.x, obj.y, radius, length)
+                    if hit_t is not None and hit_t <= cell_end + 1e-6 and (best_t is None or hit_t < best_t):
+                        best_t = hit_t
+                        best_code = code
         if best_t is not None:
             return best_code
 
@@ -182,7 +175,6 @@ def _ray_code(self: Robot, world: World, angle: float, length: float) -> int:
         if cell_x < 0 or cell_y < 0 or cell_x * cell_size >= world.width or cell_y * cell_size >= world.height:
             return 4
 
-    # Scent remains a soft environmental cue, checked once at the ray tip.
     if getattr(world, "_scent_grid_tick", None) != world.tick:
         _rebuild_scent_grid(world)
     cx, cy = _scent_cell(target_x, target_y)
