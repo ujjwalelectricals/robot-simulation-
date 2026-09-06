@@ -3,6 +3,10 @@ import os
 import random
 import unittest
 
+import performance_tuning
+
+performance_tuning.install()
+
 from evolve_engine import Genome, Memory, SpatialHash, World, load_genome
 
 
@@ -23,18 +27,23 @@ class EngineTests(unittest.TestCase):
             self.assertEqual([r.sex for r in world.population], ["male", "female"])
             self.assertFalse(world.founders_established)
 
-    def test_founders_reproduce_into_target_population(self):
+    def test_founders_reproduce_gradually(self):
         world = World(seed=42)
         world.configure(population=12)
         male, female = world.population
         male.age = female.age = 60
         male.energy = female.energy = 90
         male.hydration = female.hydration = 90
+
         world.step(1)
-        self.assertTrue(world.founders_established)
-        self.assertEqual(len(world.population), 12)
-        self.assertTrue(all(r.generation == 1 for r in world.population))
-        self.assertTrue(all(r.parent_ids != (0, 0) for r in world.population[2:]))
+        self.assertEqual(len(world.population), 3)
+        self.assertFalse(world.founders_established)
+        for _ in range(19):
+            world.step(1)
+        self.assertEqual(len(world.population), 3)
+        world.step(1)
+        self.assertEqual(len(world.population), 4)
+        self.assertFalse(world.founders_established)
 
     def test_dynamic_rays_and_hyperparameters_are_genetic(self):
         rng = random.Random(7)
