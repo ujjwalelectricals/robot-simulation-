@@ -2,6 +2,10 @@ import json
 import random
 import unittest
 
+import performance_tuning
+
+performance_tuning.install()
+
 from evolve_engine import Genome, World
 
 
@@ -31,7 +35,7 @@ class EvolveCoreTests(unittest.TestCase):
         self.assertEqual([r.sex for r in world.population], ["male", "female"])
         self.assertFalse(world.founders_established)
 
-    def test_founder_reproduction(self):
+    def test_founder_reproduction_is_gradual(self):
         world = World(seed=4)
         world.configure(population=8)
         male, female = world.population
@@ -39,9 +43,14 @@ class EvolveCoreTests(unittest.TestCase):
         male.energy = female.energy = 90
         male.hydration = female.hydration = 90
         world.step(1)
-        self.assertTrue(world.founders_established)
-        self.assertEqual(len(world.population), 8)
-        self.assertTrue(all(r.generation == 1 for r in world.population))
+        self.assertEqual(len(world.population), 3)
+        self.assertFalse(world.founders_established)
+        for _ in range(19):
+            world.step(1)
+        self.assertEqual(len(world.population), 3)
+        world.step(1)
+        self.assertEqual(len(world.population), 4)
+        self.assertFalse(world.founders_established)
 
     def test_mutation_bounds(self):
         child = Genome().mutate(random.Random(4), 1.0)
