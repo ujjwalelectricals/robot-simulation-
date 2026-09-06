@@ -1,8 +1,7 @@
 """Targeted runtime fixes and performance optimizations for EVOLVE.
 
-The canonical engine remains intentionally simple and standard-library-only.
-This module installs small, behavior-preserving optimizations before the GUI
-creates its World instance.
+This module is intentionally small: it patches concrete hot paths in the existing
+standard-library-only engine instead of replacing the engine architecture.
 """
 from __future__ import annotations
 
@@ -44,6 +43,8 @@ def _rebuild_scent_grid(world: World) -> None:
 
 
 def _local_scent(world: World, x: float, y: float, kind: str) -> float:
+    # Exactly one scent-grid rebuild per simulation tick. New deposits become
+    # visible on the following tick instead of causing repeated rebuilds mid-tick.
     if getattr(world, "_scent_grid_tick", None) != world.tick:
         _rebuild_scent_grid(world)
     cx, cy = _scent_cell(x, y)
@@ -65,17 +66,18 @@ def _local_scent(world: World, x: float, y: float, kind: str) -> float:
 
 
 def _deposit_scent(world: World, x: float, y: float, kind: str, strength: float) -> None:
+    # Remove genuinely stale/weak trails; do not discard strong old trails merely
+    # because many new deposits arrived.
     world.scents = [s for s in world.scents if s.strength >= 0.1 and s.age <= 800]
     world.scents.append(Scent(x, y, kind, clamp(strength, 0.0, 1.5)))
-    # The scent grid is rebuilt once on the next tick, avoiding repeated cache
-    # rebuilds while several robots are producing scents in the current tick.
-    world._scent_grid_tick = -1
+    # Keep a safety bound for pathological experiments while retaining the
+    # strongest/freshest scent markers.
     if len(world.scents) > 6000:
         world.scents = heapq.nlargest(6000, world.scents, key=lambda s: (s.strength, -s.age))
 
 
 def _ray_code(self: Robot, world: World, angle: float, length: float) -> int:
-    """Raycast world objects; evaluate scent once at the ray tip."""
+    """Object raycast with one scent query at the ray tip, not every sample."""
     step = 7.0
     cos_a = math.cos(angle)
     sin_a = math.sin(angle)
@@ -197,7 +199,8 @@ def _reproduce_founders(world: World) -> bool:
     if len(world.population) >= target:
         world.founders_established = True
         return False
-    world.population.append(world.create_child(male, female))
+    child = world.create_child(male, female)
+    world.population.append(child)
     male.offspring += 1
     female.offspring += 1
     world._founder_last_reproduction_tick = world.tick
@@ -269,12 +272,14 @@ def _step(world: World, amount: int = 1) -> None:
         if not _founders_alive(world):
             world.reset()
             return
+        # The first rebuild lets predators perceive current robot positions.
         world.rebuild_spatial()
         world.reproduce_founders()
         if world.predators:
             for predator in world.predators:
                 if predator.alive:
                     world.predator_step(predator)
+            # Predators moved, so this second rebuild is genuinely necessary.
             world.rebuild_spatial()
         for robot in list(world.population):
             if robot.alive:
@@ -298,7 +303,6 @@ def install() -> None:
     if getattr(World, "_performance_patch_installed", False):
         return
     World._original_reset = World.reset
-    World._original_deposit_scent = World.deposit_scent
     World.local_scent = _local_scent  # type: ignore[method-assign]
     World.deposit_scent = _deposit_scent  # type: ignore[method-assign]
     World.food_at = lambda self, x, y, radius: _food_at(self, x, y, radius)  # type: ignore[method-assign]
