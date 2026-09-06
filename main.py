@@ -4,6 +4,7 @@ import argparse
 import math
 import time
 import tkinter as tk
+from collections import deque
 from tkinter import filedialog, messagebox, ttk
 
 from performance_tuning import install
@@ -23,7 +24,7 @@ class EvolveApp:
         root.minsize(1240, 780)
         root.configure(bg=BG)
         self.world = World()
-        self.running = False  # Start with exactly the two founders visible.
+        self.running = False
         self.fast = False
         self.selected_id: int | None = None
         self.show_rays = True
@@ -31,8 +32,13 @@ class EvolveApp:
         self.show_scents = True
         self.last = time.perf_counter()
         self.fps = 0.0
+        self._fps_window: deque[float] = deque(maxlen=30)
         self.frame = 0
         self.lineage_archive: dict[int, dict] = {}
+        self._generation_jump_active = False
+        self._generation_jump_start = 1
+        self._generation_jump_steps = 0
+        self._generation_jump_limit = 0
         self.build()
         self.bind_keys()
         self.set_status("● READY • 2 FOUNDERS", WARN)
@@ -178,6 +184,8 @@ class EvolveApp:
         self.show_scents = self.scents.get()
 
     def toggle(self) -> None:
+        if self._generation_jump_active:
+            return
         self.running = not self.running
         self.set_status("● RUNNING" if self.running else "● PAUSED", ACCENT if self.running else WARN)
 
@@ -186,6 +194,7 @@ class EvolveApp:
         self.set_status("● FAST MODE" if self.fast and self.running else ("● PAUSED" if not self.running else "● RUNNING"), WARN if self.fast and not self.running else ACCENT)
 
     def reset(self) -> None:
+        self._generation_jump_active = False
         self.world.reset()
         self.lineage_archive.clear()
         self.selected_id = None
@@ -203,17 +212,30 @@ class EvolveApp:
             messagebox.showerror("Invalid settings", "Enter valid numeric experiment settings.")
 
     def next_generation(self) -> None:
+        if self._generation_jump_active:
+            return
         self.running = False
-        start = self.world.generation
+        self._generation_jump_active = True
+        self._generation_jump_start = self.world.generation
+        self._generation_jump_steps = 0
+        self._generation_jump_limit = self.world.experiment["episode"] + 20
         self.archive_population()
-        limit = self.world.experiment["episode"] + 20
-        for _ in range(max(1, limit)):
-            self.world.step(1)
-            if self.world.generation != start:
-                break
-        self.archive_population()
-        self.running = False
-        self.set_status(f"● GENERATION {self.world.generation} • PAUSED", WARN)
+        self.set_status(f"● ADVANCING FROM G{self._generation_jump_start}…", WARN)
+        self._advance_generation()
+
+    def _advance_generation(self) -> None:
+        if not self._generation_jump_active:
+            return
+        if self.world.generation != self._generation_jump_start or self._generation_jump_steps >= self._generation_jump_limit:
+            self.archive_population()
+            self._generation_jump_active = False
+            self.set_status(f"● GENERATION {self.world.generation} • PAUSED", WARN)
+            return
+        self.world.step(1)
+        self._generation_jump_steps += 1
+        if self._generation_jump_steps % 10 == 0:
+            self.archive_population()
+        self.root.after(1, self._advance_generation)
 
     def cursor(self) -> tuple[float, float]:
         cx = self.root.winfo_pointerx() - self.canvas.winfo_rootx()
@@ -472,21 +494,30 @@ class EvolveApp:
         self.metrics.configure(state="disabled")
 
     def loop(self) -> None:
-        now = time.perf_counter()
-        self.fps = 1 / max(1e-6, now - self.last)
+        frame_start = time.perf_counter()
+        now = frame_start
+        frame_dt = max(1e-6, now - self.last)
         self.last = now
-        if self.running:
+        self._fps_window.append(1.0 / frame_dt)
+        self.fps = sum(self._fps_window) / len(self._fps_window)
+
+        if self.running and not self._generation_jump_active:
             self.world.step(4 if self.fast else 1)
             if self.frame % 5 == 0:
                 self.archive_population()
+
         self.draw()
         if self.frame % 4 == 0:
             self.update_brain()
             self.update_lineage()
             self.update_graph()
             self.update_metrics()
+
         self.frame += 1
-        self.root.after(25 if self.fast else 45, self.loop)
+        work_ms = (time.perf_counter() - frame_start) * 1000.0
+        target_ms = 25.0 if self.fast else 45.0
+        delay = max(8, int(target_ms - work_ms))
+        self.root.after(delay, self.loop)
 
 
 def run_headless(generations: int, population: int, seed: int) -> int:
