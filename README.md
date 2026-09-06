@@ -1,79 +1,165 @@
 # EVOLVE — 2D Artificial Life Robot Simulator
 
-A self-contained artificial-life laboratory where a robot is born with a small set of senses and drives, learns from consequences, survives or dies, and passes selected traits to future generations.
+EVOLVE is a self-contained 2D artificial-life laboratory. Two founders begin each experiment, live through a local world, make decisions from their senses and internal needs, learn from consequences, form memories, reproduce, and pass selected traits and learned warnings into future generations.
+
+Everything runs locally with Python's standard library. No cloud AI, API key, external server, database, or paid service is required.
 
 ## The core experiment
 
-The robot is **not told that it is inside a simulation**. Its brain receives only local sensory observations and internal body signals. There is no privileged simulation flag, map, object label, or hidden answer key.
+The robot does **not** know it is inside a simulation. Its controller receives only local observations and internal body state. There is no privileged world map, simulation flag, hidden object coordinate, or answer key.
 
-Its world creates consequences:
+The environment creates consequences:
 
-- Food and water satisfy biological drives and produce positive reward.
-- Hazards and predators cause damage and strong negative reward.
-- Boundary collisions are costly.
-- Rest reduces fatigue pressure.
-- Successful individuals become parents.
-- Offspring inherit and mutate behavioral traits.
-- Short-term/episodic memories belong to the lifetime; the inherited genome survives through generations.
+- Food restores energy and can reinforce food-seeking behavior.
+- Water restores hydration and can reinforce water-seeking behavior.
+- Hazards and predators cause damage and negative reward.
+- Rest reduces fatigue and can trigger memory replay.
+- Repeated failure can trigger behavioral recovery instead of endless oscillation.
+- Successful individuals reproduce and pass mutated traits to descendants.
 
 ## Dog-inspired artificial brain
 
-This is **not a biological dog brain**. It is a compact artificial architecture inspired by useful animal-learning behaviors:
+EVOLVE does **not** claim to reproduce a literal biological canine brain. Instead, it uses a compact animal-inspired architecture based on useful behavioral functions:
 
-- hunger, thirst and fatigue drives
-- fear/stress and curiosity
-- approach vs avoidance bias
-- attention through five directional sensory rays
-- associative Q-learning
-- working memory and episodic memories
-- confidence and emotional valence signals
-- exploration/exploitation balance
-- social-contact signal
+- hunger, thirst, fatigue, fear, curiosity, social drive, and sleep pressure
+- local visual rays plus lightweight scent and sound cues
+- associative reinforcement learning
+- working and episodic memory
+- reward prediction error
+- learned skills for navigation, food, water, threat response, social behavior, and self-control
+- needs-based goal arbitration
+- hierarchical behaviors such as `seek water → approach → drink → retreat`
+- sleep/rest and dream-style replay of salient memories
 
-The design goal is emergent behavior from limited information, rewards, memory and survival pressure.
+## Survival memory and courage
+
+A robot records a salient lesson when it dies. Typical lessons include:
+
+- `predator` — avoid or respond more carefully to predator encounters
+- `hazard` — remember dangerous environmental situations
+- `starvation` — improve future food seeking
+- `old_age` — a natural end-of-life event rather than a learned threat
+
+The death lesson becomes a strong negative association in that robot's memory. A small portion of these survival warnings is inherited by offspring through the existing learned-association inheritance system. This means descendants can begin life with an **ancestral warning** without receiving a map or perfect knowledge of the world.
+
+Courage is represented by the existing inherited `boldness` trait. Highly bold robots are more willing to confront a nearby predator. A successful close-range confrontation can push the predator away and reward survival. Less-bold robots are more likely to flee.
+
+This creates a meaningful behavioral spectrum rather than making every robot fight.
+
+## Hierarchical behavior
+
+The robot has two decision layers:
+
+```text
+Internal needs / danger
+        ↓
+Current goal
+        ↓
+Reusable behavior
+        ↓
+Primitive action
+        ↓
+Environmental consequence
+        ↓
+Learning + memory
+```
+
+Examples:
+
+```text
+Hunger  → forage_food → seek → approach → consume → retreat
+Thirst  → seek_water  → seek → approach → consume → retreat
+Fear    → escape      → cover → flee → recover
+Fatigue → rest_cycle  → shelter → rest → recover
+```
+
+Behavior can be interrupted when a more important threat appears, and stalled movement can trigger recovery rather than leaving the robot permanently stuck.
+
+## Evolution
+
+Each genome can evolve traits such as:
+
+- movement speed and turn rate
+- body size and resource capacity
+- efficiency
+- curiosity and boldness
+- sociability and attachment
+- patience and fear sensitivity
+- learning rate and discount factor
+- exploration rate
+- memory capacity
+- sensory ray angles and lengths
+
+The combination of **learning within a lifetime** and **evolution across generations** is the central experiment.
 
 ## Experimenter powers
 
-The desktop laboratory gives you direct control over the experiment without changing the robot's internal rules:
+The desktop laboratory gives the human experimenter broad control without exposing those controls to the robot's brain:
 
 - pause/resume simulation
-- run fast mode
+- fast simulation mode
 - force a generation transition
-- spawn food, water, hazards and predators at the mouse position
-- manually reward or punish the selected robot
-- heal a selected robot or restore energy/hydration
-- select a robot and inspect its body state, drives, brain and genome
-- show/hide sensory rays and robot labels
-- change population, resources, hazards, predators, mutation and episode length
-- save an experiment snapshot as JSON
+- spawn food, water, hazards, and predators at the cursor
+- reward or punish a selected robot
+- heal or boost a selected robot
+- kill a selected robot
+- teleport a selected robot
+- select any robot and inspect body state, drives, goals, memory, skills, behavior, genome, and learned values
+- show/hide sensory visualization and labels
+- adjust population, resources, predators, hazards, mutation, and episode length
+- save snapshots as JSON
+- export a successful robot genome and reuse it in another experiment
+- inspect lineage and historical ancestors
+- inspect live ecosystem statistics
 
-## Evolution loop
+## Ecosystem
 
-```text
-Birth → Sense → Decide → Act → Consequence → Learn → Survive/Die
-                         ↓
-                 Fitness + Memory
-                         ↓
-              Selection + Mutation
-                         ↓
-                 Next Generation
-```
+The world includes:
+
+- food and water resources
+- hazards
+- shelters
+- multiple predator behaviors
+- scent trails that decay over time
+- day/night and sleep pressure
+- social encounters
+- evolving populations
+
+The experiment starts with **exactly one male and one female founder**. Before the first founder reproduction, death of either founder causes a complete experiment reset. After the founders successfully establish the next generation, normal population evolution begins.
+
+## Performance architecture
+
+The simulation is designed to remain lightweight while supporting larger populations:
+
+- spatial hashing for local entity queries
+- spatially accelerated sensory rays
+- spatial scent indexing
+- reduced repeated distance calculations
+- cached hot-path lookups
+- controlled scent pruning
+- asynchronous UI generation stepping
+- decoupled simulation and panel refresh work
+- deterministic seeded headless experiments
+
+The goal is to optimize the engine itself rather than hide lag by simply reducing features.
 
 ## Run on Windows
 
-Python 3.10+ is enough. No pip install is required.
+Python 3.10+ is enough. No package installation is required.
 
 ```powershell
 python main.py
 ```
 
-Or double-click:
+Or use the supported expanded launcher:
 
 ```text
 run.bat
 ```
 
-For a fast, GUI-free experiment:
+The launcher loads the performance, ecosystem, cognitive, hierarchical-behavior, survival-memory, and visual layers together.
+
+For a fast GUI-free experiment:
 
 ```powershell
 python main.py --headless --generations 20 --population 250 --seed 42
@@ -86,11 +172,9 @@ python main.py --headless --generations 20 --population 250 --seed 42
 - **N** — force next generation
 - **R** — reset experiment
 - **Esc** — quit
-- **Left click robot** — inspect that robot
+- **Left click robot** — inspect robot
 
 ## Project phases
-
-The repository is designed to grow through these stages:
 
 1. World + movement ✅
 2. Sensors ✅
@@ -110,7 +194,7 @@ The repository is designed to grow through these stages:
 
 ## Design principle
 
-We are building an artificial-life experiment, not claiming consciousness or human-level intelligence. The interesting part is watching useful behavior emerge from a simple body, limited senses, learning, memory, reward, punishment, survival and evolution.
+EVOLVE is an artificial-life experiment, not a claim of consciousness and not a literal copy of a dog brain. The goal is to create believable learning and survival behavior from limited senses, internal needs, memory, consequences, evolution, and environmental pressure — and let the experiment reveal what emerges.
 
 ## License
 
