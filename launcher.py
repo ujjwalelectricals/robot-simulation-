@@ -1,4 +1,4 @@
-"""Windows launcher: optimized runtime + expanded ecosystem + visual upgrade."""
+"""Windows launcher: optimized runtime + cognitive brain + ecosystem + visuals."""
 from performance_tuning import install as install_performance
 
 install_performance()
@@ -6,6 +6,10 @@ install_performance()
 from ecosystem_expansion import install as install_ecosystem
 
 install_ecosystem()
+
+from cognitive_upgrade import install as install_cognition
+
+install_cognition()
 
 import main
 
