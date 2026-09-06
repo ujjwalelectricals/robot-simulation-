@@ -89,6 +89,21 @@ class EngineTests(unittest.TestCase):
         self.assertIn(a, index.nearby(5, 5, 12))
         self.assertNotIn(c, index.nearby(5, 5, 12))
 
+    def test_accelerated_ray_still_detects_food(self):
+        world = World(seed=13)
+        world.population = world.population[:1]
+        robot = world.population[0]
+        robot.x, robot.y, robot.angle = 100.0, 100.0, 0.0
+        world.food = [world.food[0]]
+        world.food[0].x, world.food[0].y, world.food[0].alive = 145.0, 100.0, True
+        world.water.clear()
+        world.hazards.clear()
+        world.predators.clear()
+        world.shelters.clear()
+        world.scents.clear()
+        world.rebuild_spatial()
+        self.assertEqual(robot.ray_code(world, 0.0, 70.0), 1)
+
     def test_small_population_smoke(self):
         world = World(seed=123)
         world.configure(population=12, food=16, water=10, hazards=2, predators=1, episode=100)
