@@ -1,8 +1,7 @@
 """Optional EVOLVE ecosystem expansion loaded by the Windows launcher.
 
-Adds richer predator behavior, larger ecosystems, threat-aware robot behavior,
-and a few more persistent environmental shelters without replacing the core
-engine or its optimized runtime.
+Adds richer predator behavior, a larger default ecosystem, threat-aware robot
+behavior, and additional shelters without replacing the optimized core engine.
 """
 from __future__ import annotations
 
@@ -16,8 +15,7 @@ _ORIGINALS: dict[str, object] = {}
 
 
 def _configure_expanded_defaults(world: World) -> None:
-    # Keep explicit user configuration intact. Only raise defaults when the
-    # experiment is still using the original stock defaults.
+    """Upgrade only untouched stock defaults; preserve explicit experiments."""
     if getattr(world, "_expanded_defaults_applied", False):
         return
     if getattr(world, "_target_population", 24) == 24:
@@ -80,8 +78,6 @@ def _expanded_predator_step(world: World, predator: Predator) -> None:
     elif kind == "scout":
         predator.angle = wrap_angle(predator.angle + 0.025 * math.sin(world.tick * 0.031 + predator.x * 0.01))
 
-    # Pack leaders bias toward the average direction of nearby predators so a
-    # hunt naturally forms instead of every predator independently chasing.
     if kind == "pack_leader":
         nearby = [
             obj for obj in world.nearby(predator.x, predator.y, 170)
@@ -121,8 +117,6 @@ def _expanded_drive_bias(self: Robot, world: World, codes: list[int], internal: 
     self.brain.stress = clamp(self.brain.stress + 0.018 * threat, 0.0, 1.0)
     self.brain.associations["predator_threat"] = self.brain.associations.get("predator_threat", 0.0) * 0.995 - 0.02 * threat
 
-    # Strong threat makes fleeing clearly preferred; side-stepping is also
-    # encouraged so robots do not all pile onto the same escape corridor.
     bias[8] += 1.8 * threat * (0.7 + self.genome.fear_sensitivity)
     if dx * math.cos(self.angle) + dy * math.sin(self.angle) > 0:
         bias[1] += 0.45 * threat
@@ -130,39 +124,40 @@ def _expanded_drive_bias(self: Robot, world: World, codes: list[int], internal: 
     return bias
 
 
+def _fill_to_targets(world: World) -> None:
+    target = world.experiment
+    while len(world.food) < target["food"]:
+        world.spawn_food()
+    while len(world.water) < target["water"]:
+        world.spawn_water()
+    while len(world.hazards) < target["hazards"]:
+        world.spawn_hazard()
+    while len(world.predators) < target["predators"]:
+        world.spawn_predator()
+    for index, predator in enumerate(world.predators):
+        _decorate_predator(predator, index)
+
+
 def _expanded_reset(world: World) -> None:
     original = _ORIGINALS["reset"]
     original(world)  # type: ignore[misc]
     _configure_expanded_defaults(world)
-
-    # Add more persistent safe zones to make the larger ecosystem readable and
-    # give cautious agents a meaningful place to retreat.
-    extra_shelters = 5
-    for _ in range(extra_shelters):
+    for _ in range(5):
         x, y = world.random_xy(70)
         world.shelters.append(Shelter(x, y, radius=38.0))
-
-    for index, predator in enumerate(world.predators):
-        _decorate_predator(predator, index)
-
+    _fill_to_targets(world)
     world.rebuild_spatial()
 
 
 def install() -> None:
-    """Install the ecosystem layer exactly once."""
     if getattr(World, "_ecosystem_expansion_installed", False):
         return
-
     _ORIGINALS["spawn_predator"] = World.spawn_predator
     _ORIGINALS["predator_step"] = World.predator_step
     _ORIGINALS["drive_bias"] = Robot.drive_bias
     _ORIGINALS["reset"] = World.reset
-
     World.spawn_predator = _spawn_predator  # type: ignore[method-assign]
     World.predator_step = _expanded_predator_step  # type: ignore[method-assign]
     Robot.drive_bias = _expanded_drive_bias  # type: ignore[method-assign]
     World.reset = _expanded_reset  # type: ignore[method-assign]
     World._ecosystem_expansion_installed = True
-
-    # Apply the richer defaults to the existing world created by main.py.
-    _configure_expanded_defaults(getattr(_ORIGINALS.get("world") , "__self__", None)) if False else None
