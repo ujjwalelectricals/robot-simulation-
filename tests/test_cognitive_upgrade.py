@@ -7,7 +7,7 @@ ecosystem_expansion.install()
 import cognitive_upgrade
 cognitive_upgrade.install()
 
-from evolve_engine import World
+from evolve_engine import Food, World
 
 
 class CognitiveUpgradeTests(unittest.TestCase):
@@ -28,10 +28,17 @@ class CognitiveUpgradeTests(unittest.TestCase):
         robot = world.population[0]
         robot.energy = 2.0
         robot.hydration = robot.genome.effective_max_hydration()
-        state, codes, cue, internal = robot.observe(world)
-        bias = robot.drive_bias(world, codes, internal)
+        _state, _codes, _cue, internal = robot.observe(world)
+        bias_without_food = robot.drive_bias(world, [0] * 7, internal)
         self.assertEqual(robot.brain.current_goal, "hunger")
-        self.assertGreater(bias[5], bias[6])
+        self.assertEqual(bias_without_food[5], bias_without_food[6])
+
+        world.food = [Food(robot.x + 2, robot.y, energy=30.0)]
+        state, codes, _cue, internal = robot.observe(world)
+        bias_with_food = robot.drive_bias(world, codes, internal)
+        self.assertEqual(robot.brain.current_goal, "hunger")
+        self.assertGreater(bias_with_food[5], bias_with_food[6])
+        self.assertTrue(state)
 
     def test_olfactory_and_auditory_context_are_local(self):
         world = World(seed=23)
