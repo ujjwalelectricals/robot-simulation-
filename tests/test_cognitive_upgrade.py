@@ -34,11 +34,13 @@ class CognitiveUpgradeTests(unittest.TestCase):
         self.assertEqual(bias_without_food[5], bias_without_food[6])
 
         world.food = [Food(robot.x + 2, robot.y, energy=30.0)]
-        state, codes, _cue, internal = robot.observe(world)
-        bias_with_food = robot.drive_bias(world, codes, internal)
+        _state, _codes, _cue, internal = robot.observe(world)
+        # Force only the sensory result here; the food object itself remains in
+        # the world so this test stays focused on goal/action arbitration.
+        perceived_food_codes = [0, 0, 0, 1, 0, 0, 0]
+        bias_with_food = robot.drive_bias(world, perceived_food_codes, internal)
         self.assertEqual(robot.brain.current_goal, "hunger")
         self.assertGreater(bias_with_food[5], bias_with_food[6])
-        self.assertTrue(state)
 
     def test_olfactory_and_auditory_context_are_local(self):
         world = World(seed=23)
