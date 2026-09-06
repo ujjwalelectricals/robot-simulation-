@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-python main.py
+python launcher.py
 if errorlevel 1 (
   echo.
   echo Evolve exited with an error.
