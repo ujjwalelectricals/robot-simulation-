@@ -43,8 +43,6 @@ def _rebuild_scent_grid(world: World) -> None:
 
 
 def _local_scent(world: World, x: float, y: float, kind: str) -> float:
-    # Exactly one scent-grid rebuild per simulation tick. New deposits become
-    # visible on the following tick instead of causing repeated rebuilds mid-tick.
     if getattr(world, "_scent_grid_tick", None) != world.tick:
         _rebuild_scent_grid(world)
     cx, cy = _scent_cell(x, y)
@@ -66,18 +64,19 @@ def _local_scent(world: World, x: float, y: float, kind: str) -> float:
 
 
 def _deposit_scent(world: World, x: float, y: float, kind: str, strength: float) -> None:
-    # Remove genuinely stale/weak trails; do not discard strong old trails merely
-    # because many new deposits arrived.
     world.scents = [s for s in world.scents if s.strength >= 0.1 and s.age <= 800]
-    world.scents.append(Scent(x, y, kind, clamp(strength, 0.0, 1.5)))
-    # Keep a safety bound for pathological experiments while retaining the
-    # strongest/freshest scent markers.
+    scent = Scent(x, y, kind, clamp(strength, 0.0, 1.5))
+    world.scents.append(scent)
     if len(world.scents) > 6000:
         world.scents = heapq.nlargest(6000, world.scents, key=lambda s: (s.strength, -s.age))
+    # If this tick's grid has already been built, add the new marker directly to
+    # its bucket. This keeps same-tick sensing correct without rebuilding the grid.
+    if getattr(world, "_scent_grid_tick", None) == world.tick:
+        world._scent_grid.setdefault(_scent_cell(x, y), []).append(scent)
 
 
 def _ray_code(self: Robot, world: World, angle: float, length: float) -> int:
-    """Object raycast with one scent query at the ray tip, not every sample."""
+    """Object raycast with one combined scent query at the ray tip."""
     step = 7.0
     cos_a = math.cos(angle)
     sin_a = math.sin(angle)
@@ -107,9 +106,29 @@ def _ray_code(self: Robot, world: World, angle: float, length: float) -> int:
                 return 7
     tx = self.x + cos_a * length
     ty = self.y + sin_a * length
-    if _local_scent(world, tx, ty, "danger") > 0.55:
+    # One scent-grid traversal gives us both cues.
+    cx, cy = _scent_cell(tx, ty)
+    danger = 0.0
+    food = 0.0
+    radius2 = _SCENT_RADIUS * _SCENT_RADIUS
+    if getattr(world, "_scent_grid_tick", None) != world.tick:
+        _rebuild_scent_grid(world)
+    for ix in range(cx - 1, cx + 2):
+        for iy in range(cy - 1, cy + 2):
+            for scent in world._scent_grid.get((ix, iy), ()):
+                dx = tx - scent.x
+                dy = ty - scent.y
+                d2 = dx * dx + dy * dy
+                if d2 >= radius2:
+                    continue
+                value = scent.strength * (1.0 - math.sqrt(d2) / _SCENT_RADIUS)
+                if scent.kind == "danger" and value > danger:
+                    danger = value
+                elif scent.kind == "food" and value > food:
+                    food = value
+    if danger > 0.55:
         return 9
-    if _local_scent(world, tx, ty, "food") > 0.55:
+    if food > 0.55:
         return 8
     return 0
 
@@ -199,8 +218,7 @@ def _reproduce_founders(world: World) -> bool:
     if len(world.population) >= target:
         world.founders_established = True
         return False
-    child = world.create_child(male, female)
-    world.population.append(child)
+    world.population.append(world.create_child(male, female))
     male.offspring += 1
     female.offspring += 1
     world._founder_last_reproduction_tick = world.tick
@@ -272,14 +290,12 @@ def _step(world: World, amount: int = 1) -> None:
         if not _founders_alive(world):
             world.reset()
             return
-        # The first rebuild lets predators perceive current robot positions.
         world.rebuild_spatial()
         world.reproduce_founders()
         if world.predators:
             for predator in world.predators:
                 if predator.alive:
                     world.predator_step(predator)
-            # Predators moved, so this second rebuild is genuinely necessary.
             world.rebuild_spatial()
         for robot in list(world.population):
             if robot.alive:
