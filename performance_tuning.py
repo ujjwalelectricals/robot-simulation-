@@ -1,7 +1,7 @@
 """Targeted runtime fixes and performance optimizations for EVOLVE.
 
-This module is intentionally small: it patches concrete hot paths in the existing
-standard-library-only engine instead of replacing the engine architecture.
+This module patches concrete hot paths in the existing standard-library-only
+engine instead of replacing the engine architecture.
 """
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ _SCENT_CELL = 100.0
 _SCENT_RADIUS = 100.0
 _FOUNDER_COOLDOWN = 20
 _MEM_DECAY = tuple(0.9997 ** age for age in range(6))
+_SCENT_HARD_CAP = 6000
 
 
 def _scent_cell(x: float, y: float) -> Tuple[int, int]:
@@ -64,19 +65,24 @@ def _local_scent(world: World, x: float, y: float, kind: str) -> float:
 
 
 def _deposit_scent(world: World, x: float, y: float, kind: str, strength: float) -> None:
-    world.scents = [s for s in world.scents if s.strength >= 0.1 and s.age <= 800]
     scent = Scent(x, y, kind, clamp(strength, 0.0, 1.5))
     world.scents.append(scent)
-    if len(world.scents) > 6000:
-        world.scents = heapq.nlargest(6000, world.scents, key=lambda s: (s.strength, -s.age))
-    # If this tick's grid has already been built, add the new marker directly to
-    # its bucket. This keeps same-tick sensing correct without rebuilding the grid.
+    # Avoid scanning the full scent list for every deposit. Cleanup is done once
+    # per simulation tick; this cap is only a last-resort memory safety valve.
+    if len(world.scents) > _SCENT_HARD_CAP:
+        world.scents = heapq.nlargest(
+            _SCENT_HARD_CAP,
+            world.scents,
+            key=lambda s: (s.strength, -s.age),
+        )
+    # If the current tick's grid already exists, add the new marker directly so
+    # same-tick scent perception remains correct without rebuilding the grid.
     if getattr(world, "_scent_grid_tick", None) == world.tick:
         world._scent_grid.setdefault(_scent_cell(x, y), []).append(scent)
 
 
 def _ray_code(self: Robot, world: World, angle: float, length: float) -> int:
-    """Object raycast with one combined scent query at the ray tip."""
+    """Object raycast with one combined scent lookup at the ray tip."""
     step = 7.0
     cos_a = math.cos(angle)
     sin_a = math.sin(angle)
@@ -104,15 +110,15 @@ def _ray_code(self: Robot, world: World, angle: float, length: float) -> int:
                 return 6
             if isinstance(obj, Shelter) and d2 < obj.radius * obj.radius:
                 return 7
+
     tx = self.x + cos_a * length
     ty = self.y + sin_a * length
-    # One scent-grid traversal gives us both cues.
+    if getattr(world, "_scent_grid_tick", None) != world.tick:
+        _rebuild_scent_grid(world)
     cx, cy = _scent_cell(tx, ty)
     danger = 0.0
     food = 0.0
     radius2 = _SCENT_RADIUS * _SCENT_RADIUS
-    if getattr(world, "_scent_grid_tick", None) != world.tick:
-        _rebuild_scent_grid(world)
     for ix in range(cx - 1, cx + 2):
         for iy in range(cy - 1, cy + 2):
             for scent in world._scent_grid.get((ix, iy), ()):
@@ -300,9 +306,12 @@ def _step(world: World, amount: int = 1) -> None:
         for robot in list(world.population):
             if robot.alive:
                 robot.step(world)
-        world.scents = [s for s in world.scents if s.strength >= 0.025 and s.age < 1600]
         for scent in world.scents:
             scent.step()
+        # Prune once per tick, not on every deposit. Strong/fresh trails survive;
+        # stale or weak trails are removed deterministically.
+        world.scents = [s for s in world.scents if s.strength >= 0.1 and s.age <= 800]
+        world._scent_grid_tick = -1
         world.food = [f for f in world.food if f.alive]
         world.water = [w for w in world.water if w.alive]
         while len(world.food) < world.experiment["food"]:
