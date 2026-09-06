@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from typing import Optional
 
-from evolve_engine import Predator, Robot, World, clamp
+from evolve_engine import Memory, Predator, Hazard, Robot, World, clamp
 
 _ORIGINALS: dict[str, object] = {}
 _INSTALLED = False
@@ -24,41 +24,53 @@ def _ensure(robot: Robot) -> None:
     robot._last_confront_tick = -10000
 
 
-def _death_reason(robot: Robot) -> str:
-    reason = getattr(robot, "kill_reason", "") or ""
-    lowered = reason.lower()
-    if "predator" in lowered:
-        return "predator"
-    if "hazard" in lowered or "damage" in lowered:
-        return "hazard"
-    if "starvation" in lowered or "dehydration" in lowered:
-        return "starvation"
-    if "old age" in lowered:
-        return "old_age"
-    return lowered or "unknown"
-
-
-def _record_death(robot: Robot, world: World) -> None:
+def _record_death(robot: Robot, world: World, lesson: Optional[str] = None) -> None:
     _ensure(robot)
-    lesson = _death_reason(robot)
-    if not lesson:
-        return
+    lesson = lesson or _infer_death_reason(robot)
     robot.last_death_lesson = lesson
     robot.death_lessons.append(lesson)
     if len(robot.death_lessons) > 8:
         del robot.death_lessons[:-8]
 
-    # Strong inherited warning association. This is attached to the existing
-    # brain memory/association system so offspring can inherit the lesson.
     cue = f"death:{lesson}"
     robot.brain.associations[cue] = clamp(robot.brain.associations.get(cue, 0.0) - 8.0, -20.0, 20.0)
+    robot.brain.episodic.append(Memory("death", cue, -18.0, world.tick, 1.0))
+    robot.brain.episodic = robot.brain.episodic[-160:]
+
+
+def _infer_death_reason(robot: Robot) -> str:
+    reason = getattr(robot, "kill_reason", "") or ""
+    lowered = reason.lower()
+    if "predator" in lowered:
+        return "predator"
+    if "hazard" in lowered:
+        return "hazard"
+    if "starvation" in lowered or "dehydration" in lowered:
+        return "starvation"
+    if "old age" in lowered:
+        return "old_age"
+    if "damage" in lowered:
+        return "hazard"
+    return lowered or "unknown"
+
+
+def _death_threat_before_step(robot: Robot, world: World) -> Optional[str]:
+    for obj in world.nearby(robot.x, robot.y, 34):
+        if isinstance(obj, Predator) and obj.alive and math.hypot(robot.x - obj.x, robot.y - obj.y) < 16 + robot.radius():
+            return "predator"
+        if isinstance(obj, Hazard) and math.hypot(robot.x - obj.x, robot.y - obj.y) < obj.radius + robot.radius():
+            return "hazard"
+    if robot.energy <= 0 or robot.hydration <= 0:
+        return "starvation"
+    if robot.age >= world.max_age - 1:
+        return "old_age"
+    return None
 
 
 def _confront_bias(robot: Robot, world: World, bias: list[float]) -> list[float]:
     _ensure(robot)
-    # Boldness is the existing inherited courage trait.
     courage = clamp(robot.genome.boldness, 0.0, 1.0)
-    if courage < 0.72 or not robot.alive:
+    if not robot.alive:
         return bias
 
     nearest: Optional[Predator] = None
@@ -74,15 +86,17 @@ def _confront_bias(robot: Robot, world: World, bias: list[float]) -> list[float]
     if nearest is None:
         return bias
 
-    # Brave robots have a meaningful chance to challenge a predator instead of
-    # receiving a blanket "never flee" rule.
+    learned_fear = abs(robot.brain.associations.get("death:predator", 0.0))
     pressure = courage * (1.0 - math.sqrt(best_d2) / 90.0)
-    bias[7] += 0.70 * pressure  # approach/confront
-    bias[8] -= 0.45 * pressure  # reduce automatic fleeing
+    if courage >= 0.72:
+        bias[7] += 0.70 * pressure
+        bias[8] -= 0.45 * pressure
+    if learned_fear > 4.0:
+        bias[8] += min(0.8, learned_fear * 0.035) * (1.0 - 0.35 * courage)
     return bias
 
 
-def _brain_summary(robot: Robot) -> dict:
+def summary(robot: Robot) -> dict:
     _ensure(robot)
     result = dict(robot.brain.summary())
     result.update({
@@ -97,13 +111,12 @@ def _brain_summary(robot: Robot) -> dict:
 def _robot_step(self: Robot, world: World) -> None:
     _ensure(self)
     was_alive = self.alive
+    pre_reason = _death_threat_before_step(self, world)
     _ORIGINALS["robot_step"](self, world)  # type: ignore[misc]
 
-    # Learn from the death that just happened.
     if was_alive and not self.alive:
-        _record_death(self, world)
+        _record_death(self, world, pre_reason)
         return
-
     if not self.alive:
         return
 
@@ -124,8 +137,6 @@ def _robot_step(self: Robot, world: World) -> None:
     if nearest is None:
         return
 
-    # Close-range confrontation: the robot pushes the predator away instead of
-    # taking another full hit every tick. Higher courage gives better odds.
     if world.rng.random() < 0.35 + 0.45 * courage:
         dx = nearest.x - self.x
         dy = nearest.y - self.y
@@ -141,10 +152,8 @@ def _robot_step(self: Robot, world: World) -> None:
 
 
 def _create_child(original, world: World, a: Robot, b: Robot):
-    child = original(a, b)
+    child = original(world, a, b)
     _ensure(child)
-    # Blend a small amount of the parents' death lessons into inherited
-    # associations. The child does not get a full adult episodic memory.
     parent_lessons = []
     for parent in (a, b):
         parent_lessons.extend(getattr(parent, "death_lessons", [])[-3:])
@@ -167,7 +176,7 @@ def install() -> None:
         return _confront_bias(self, world, bias)
 
     def create_child(world: World, a: Robot, b: Robot):
-        return _create_child(_ORIGINALS["world_create_child"], world, a, b)  # type: ignore[misc]
+        return _create_child(_ORIGINALS["world_create_child"], world, a, b)
 
     Robot.step = _robot_step  # type: ignore[method-assign]
     Robot.drive_bias = drive_bias  # type: ignore[method-assign]
