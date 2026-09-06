@@ -67,63 +67,133 @@ def _local_scent(world: World, x: float, y: float, kind: str) -> float:
 def _deposit_scent(world: World, x: float, y: float, kind: str, strength: float) -> None:
     scent = Scent(x, y, kind, clamp(strength, 0.0, 1.5))
     world.scents.append(scent)
-    # Avoid scanning the full scent list for every deposit. Cleanup is done once
-    # per simulation tick; this cap is only a last-resort memory safety valve.
     if len(world.scents) > _SCENT_HARD_CAP:
-        world.scents = heapq.nlargest(
-            _SCENT_HARD_CAP,
-            world.scents,
-            key=lambda s: (s.strength, -s.age),
-        )
-    # If the current tick's grid already exists, add the new marker directly so
-    # same-tick scent perception remains correct without rebuilding the grid.
+        world.scents = heapq.nlargest(_SCENT_HARD_CAP, world.scents, key=lambda s: (s.strength, -s.age))
     if getattr(world, "_scent_grid_tick", None) == world.tick:
         world._scent_grid.setdefault(_scent_cell(x, y), []).append(scent)
 
 
+def _ray_hit_t(rx: float, ry: float, cos_a: float, sin_a: float, obj_x: float, obj_y: float, radius: float, max_t: float) -> Optional[float]:
+    dx = obj_x - rx
+    dy = obj_y - ry
+    projection = dx * cos_a + dy * sin_a
+    if projection < 0.0 or projection > max_t:
+        return None
+    perpendicular2 = dx * dx + dy * dy - projection * projection
+    radius2 = radius * radius
+    if perpendicular2 > radius2:
+        return None
+    return max(0.0, projection - math.sqrt(max(0.0, radius2 - perpendicular2)))
+
+
 def _ray_code(self: Robot, world: World, angle: float, length: float) -> int:
-    """Object raycast with one combined scent lookup at the ray tip."""
-    step = 7.0
+    """Traverse spatial-hash cells crossed by the ray instead of sampling it."""
+    spatial = world._spatial
+    cell_size = float(spatial.cell_size)
     cos_a = math.cos(angle)
     sin_a = math.sin(angle)
-    for distance_now in range(1, max(1, int(length / step)) + 1):
-        d = distance_now * step
-        x = self.x + cos_a * d
-        y = self.y + sin_a * d
-        if x < 4 or x > world.width - 4 or y < 4 or y > world.height - 4:
-            return 4
-        for obj in world.nearby(x, y, 10):
-            ox = getattr(obj, "x", x)
-            oy = getattr(obj, "y", y)
-            dx = x - ox
-            dy = y - oy
-            d2 = dx * dx + dy * dy
-            if isinstance(obj, Predator) and obj.alive and d2 < 144:
-                return 3
-            if isinstance(obj, Hazard) and d2 <= obj.radius * obj.radius:
-                return 2
-            if isinstance(obj, Food) and obj.alive and d2 < 81:
-                return 1
-            if isinstance(obj, Water) and obj.alive and d2 < 81:
-                return 5
-            if isinstance(obj, Robot) and obj is not self and obj.alive and d2 < 100:
-                return 6
-            if isinstance(obj, Shelter) and d2 < obj.radius * obj.radius:
-                return 7
+    x0, y0 = self.x, self.y
+    target_x = x0 + cos_a * length
+    target_y = y0 + sin_a * length
+    cell_x, cell_y = spatial._key(x0, y0)
+    end_x, end_y = spatial._key(target_x, target_y)
 
-    tx = self.x + cos_a * length
-    ty = self.y + sin_a * length
+    if cos_a > 1e-12:
+        step_x = 1
+        t_max_x = ((cell_x + 1) * cell_size - x0) / cos_a
+        t_delta_x = cell_size / cos_a
+    elif cos_a < -1e-12:
+        step_x = -1
+        t_max_x = (cell_x * cell_size - x0) / cos_a
+        t_delta_x = -cell_size / cos_a
+    else:
+        step_x = 0
+        t_max_x = math.inf
+        t_delta_x = math.inf
+
+    if sin_a > 1e-12:
+        step_y = 1
+        t_max_y = ((cell_y + 1) * cell_size - y0) / sin_a
+        t_delta_y = cell_size / sin_a
+    elif sin_a < -1e-12:
+        step_y = -1
+        t_max_y = (cell_y * cell_size - y0) / sin_a
+        t_delta_y = -cell_size / sin_a
+    else:
+        step_y = 0
+        t_max_y = math.inf
+        t_delta_y = math.inf
+
+    t = 0.0
+    # A ray can cross only a handful of 55px cells at the current max length.
+    max_cells = int(math.ceil(length / cell_size)) + 6
+    seen_ids: set[int] = set()
+
+    for _ in range(max_cells):
+        cell_end = min(length, t_max_x, t_max_y)
+        candidate_buckets = []
+        # Include neighboring buckets because an object's circle can overlap a
+        # cell boundary even though its center is stored in only one bucket.
+        for bx in range(cell_x - 1, cell_x + 2):
+            for by in range(cell_y - 1, cell_y + 2):
+                candidate_buckets.append(spatial.cells.get((bx, by), ()))
+
+        best_t: Optional[float] = None
+        best_code = 0
+        for bucket in candidate_buckets:
+            for obj in bucket:
+                identity = id(obj)
+                if identity in seen_ids or obj is self:
+                    continue
+                seen_ids.add(identity)
+                if not getattr(obj, "alive", True) and not isinstance(obj, Shelter):
+                    continue
+                if isinstance(obj, Predator):
+                    radius, code = 12.0, 3
+                elif isinstance(obj, Hazard):
+                    radius, code = obj.radius, 2
+                elif isinstance(obj, Food):
+                    radius, code = 9.0, 1
+                elif isinstance(obj, Water):
+                    radius, code = 9.0, 5
+                elif isinstance(obj, Robot):
+                    radius, code = 10.0, 6
+                elif isinstance(obj, Shelter):
+                    radius, code = obj.radius, 7
+                else:
+                    continue
+                hit_t = _ray_hit_t(x0, y0, cos_a, sin_a, obj.x, obj.y, radius, length)
+                if hit_t is not None and hit_t <= cell_end + 1e-6 and (best_t is None or hit_t < best_t):
+                    best_t = hit_t
+                    best_code = code
+        if best_t is not None:
+            return best_code
+
+        if t >= length - 1e-9 or (cell_x == end_x and cell_y == end_y):
+            break
+        if t_max_x < t_max_y:
+            t = t_max_x
+            cell_x += step_x
+            t_max_x += t_delta_x
+        else:
+            t = t_max_y
+            cell_y += step_y
+            t_max_y += t_delta_y
+        if cell_x < 0 or cell_y < 0 or cell_x * cell_size >= world.width or cell_y * cell_size >= world.height:
+            return 4
+
+    # Scent remains a soft environmental cue, checked once at the ray tip.
     if getattr(world, "_scent_grid_tick", None) != world.tick:
         _rebuild_scent_grid(world)
-    cx, cy = _scent_cell(tx, ty)
+    cx, cy = _scent_cell(target_x, target_y)
     danger = 0.0
     food = 0.0
     radius2 = _SCENT_RADIUS * _SCENT_RADIUS
     for ix in range(cx - 1, cx + 2):
         for iy in range(cy - 1, cy + 2):
             for scent in world._scent_grid.get((ix, iy), ()):
-                dx = tx - scent.x
-                dy = ty - scent.y
+                dx = target_x - scent.x
+                dy = target_y - scent.y
                 d2 = dx * dx + dy * dy
                 if d2 >= radius2:
                     continue
@@ -308,8 +378,6 @@ def _step(world: World, amount: int = 1) -> None:
                 robot.step(world)
         for scent in world.scents:
             scent.step()
-        # Prune once per tick, not on every deposit. Strong/fresh trails survive;
-        # stale or weak trails are removed deterministically.
         world.scents = [s for s in world.scents if s.strength >= 0.1 and s.age <= 800]
         world._scent_grid_tick = -1
         world.food = [f for f in world.food if f.alive]
