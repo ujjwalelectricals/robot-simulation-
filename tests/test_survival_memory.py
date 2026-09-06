@@ -20,6 +20,7 @@ class SurvivalMemoryTests(unittest.TestCase):
         robot = world.population[0]
         predator = world.predators[0]
         predator.x, predator.y = robot.x + 1, robot.y
+        world.rebuild_spatial()
         robot.health = 5.0
         robot.brain.associations.clear()
         survival_memory_upgrade._robot_step(robot, world)
@@ -41,6 +42,7 @@ class SurvivalMemoryTests(unittest.TestCase):
         robot.genome.boldness = 0.95
         predator = world.predators[0]
         predator.x, predator.y = robot.x + 12, robot.y
+        world.rebuild_spatial()
         bias = robot.drive_bias(world, [0] * 7, robot.drives(world))
         self.assertGreater(bias[7], 0.0)
         self.assertLessEqual(bias[8], 2.0)
