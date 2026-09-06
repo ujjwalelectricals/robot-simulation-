@@ -73,6 +73,18 @@ def _deposit_scent(world: World, x: float, y: float, kind: str, strength: float)
         world._scent_grid.setdefault(_scent_cell(x, y), []).append(scent)
 
 
+def _nearby(world: World, x: float, y: float, radius: float) -> List[object]:
+    """Reuse a spatial-hash result when consecutive queries hit the same cell range."""
+    cell_range = int(math.ceil(radius / world._spatial.cell_size))
+    key = (x, y, cell_range)
+    cache = getattr(world, "_nearby_cache", None)
+    if cache is not None and cache[0] == key:
+        return cache[1]
+    result = world._spatial.nearby(x, y, radius)
+    world._nearby_cache = (key, result)
+    return result
+
+
 def _ray_hit_t(rx: float, ry: float, cos_a: float, sin_a: float, obj_x: float, obj_y: float, radius: float, max_t: float) -> Optional[float]:
     dx = obj_x - rx
     dy = obj_y - ry
@@ -131,9 +143,6 @@ def _ray_code(self: Robot, world: World, angle: float, length: float) -> int:
         cell_end = min(length, t_max_x, t_max_y)
         best_t: Optional[float] = None
         best_code = 0
-
-        # Check the current cell and its neighbors because object centers live in
-        # a single bucket while their collision radius can cross cell boundaries.
         for bx in range(cell_x - 1, cell_x + 2):
             for by in range(cell_y - 1, cell_y + 2):
                 for obj in spatial.cells.get((bx, by), ()):
@@ -222,7 +231,7 @@ def _remember(self, state: str, tick: int, capacity: int) -> None:
 
 def _food_at(world: World, x: float, y: float, radius: float) -> Optional[Food]:
     radius2 = radius * radius
-    for obj in world.nearby(x, y, radius):
+    for obj in _nearby(world, x, y, radius):
         if isinstance(obj, Food) and obj.alive:
             dx = x - obj.x
             dy = y - obj.y
@@ -233,7 +242,7 @@ def _food_at(world: World, x: float, y: float, radius: float) -> Optional[Food]:
 
 def _water_at(world: World, x: float, y: float, radius: float) -> Optional[Water]:
     radius2 = radius * radius
-    for obj in world.nearby(x, y, radius):
+    for obj in _nearby(world, x, y, radius):
         if isinstance(obj, Water) and obj.alive:
             dx = x - obj.x
             dy = y - obj.y
@@ -350,11 +359,13 @@ def _reset(world: World) -> None:
     world._founder_last_reproduction_tick = -10**9
     world._scent_grid = {}
     world._scent_grid_tick = None
+    world._nearby_cache = None
 
 
 def _step(world: World, amount: int = 1) -> None:
     for _ in range(max(1, amount)):
         world.tick += 1
+        world._nearby_cache = None
         if not _founders_alive(world):
             world.reset()
             return
@@ -367,6 +378,7 @@ def _step(world: World, amount: int = 1) -> None:
             world.rebuild_spatial()
         for robot in list(world.population):
             if robot.alive:
+                world._nearby_cache = None
                 robot.step(world)
         for scent in world.scents:
             scent.step()
@@ -388,8 +400,10 @@ def install() -> None:
     if getattr(World, "_performance_patch_installed", False):
         return
     World._original_reset = World.reset
+    World._original_nearby = World.nearby
     World.local_scent = _local_scent  # type: ignore[method-assign]
     World.deposit_scent = _deposit_scent  # type: ignore[method-assign]
+    World.nearby = _nearby  # type: ignore[method-assign]
     World.food_at = lambda self, x, y, radius: _food_at(self, x, y, radius)  # type: ignore[method-assign]
     World.water_at = lambda self, x, y, radius: _water_at(self, x, y, radius)  # type: ignore[method-assign]
     World.in_shelter = lambda self, x, y: _in_shelter(self, x, y)  # type: ignore[method-assign]
