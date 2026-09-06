@@ -15,12 +15,15 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile check
-        run: python -m compileall -q main.py launcher.py performance_tuning.py ecosystem_expansion.py evolve_engine.py evolve_core.py evolve_core_v2.py tests
+        run: python -m compileall -q main.py launcher.py performance_tuning.py ecosystem_expansion.py visual_upgrade.py evolve_engine.py evolve_core.py evolve_core_v2.py tests
       - name: Unit tests
         run: python -m unittest discover -s tests -v
-      - name: Optimized startup contract
+      - name: Expanded startup contract
         run: >-
           python -c "import performance_tuning; performance_tuning.install(); import ecosystem_expansion; ecosystem_expansion.install(); from evolve_engine import World; w=World(seed=123); assert len(w.population)==2; assert [r.sex for r in w.population]==['male','female']; assert len(w.predators)>=4; assert len(w.shelters)>=10; print('expanded startup OK')"
+      - name: Launcher import contract
+        run: >-
+          python -c "import launcher; import main; assert main.EvolveApp.draw.__module__ == 'visual_upgrade'; print('launcher visual hook OK')"
       - name: Headless performance smoke
         run: >-
           python -c "import time; import performance_tuning; performance_tuning.install(); import ecosystem_expansion; ecosystem_expansion.install(); from evolve_engine import World; w=World(seed=42); t=time.perf_counter(); w.step(120); elapsed=time.perf_counter()-t; print(f'120 ticks: {elapsed:.4f}s'); assert elapsed < 20.0"
