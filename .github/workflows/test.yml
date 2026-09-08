@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile check
-        run: python -m compileall -q main.py launcher.py performance_tuning.py ecosystem_expansion.py cognitive_upgrade.py visual_upgrade.py evolve_engine.py evolve_core.py evolve_core_v2.py tests
+        run: python -m compileall -q main.py launcher.py performance_tuning.py ecosystem_expansion.py cognitive_upgrade.py hierarchical_behavior.py survival_memory_upgrade.py memory_enhancement.py advanced_evolution.py visual_upgrade.py evolve_engine.py evolve_core.py evolve_core_v2.py tests
       - name: Unit tests
         run: python -m unittest discover -s tests -v
       - name: Expanded startup contract
