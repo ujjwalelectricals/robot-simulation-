@@ -1,4 +1,4 @@
-"""Windows launcher: optimized runtime + cognition + behavior + survival memory + visuals."""
+"""Windows launcher: optimized runtime + cognition + behavior + survival memory + long-term memory + visuals."""
 from performance_tuning import install as install_performance
 
 install_performance()
@@ -14,6 +14,9 @@ install_behavior()
 
 from survival_memory_upgrade import install as install_survival_memory
 install_survival_memory()
+
+from memory_enhancement import install as install_memory
+install_memory()
 
 import main
 
