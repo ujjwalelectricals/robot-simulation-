@@ -1,4 +1,4 @@
-"""Windows launcher: optimized runtime + cognition + behavior + survival memory + long-term memory + visuals."""
+"""Windows launcher for the full EVOLVE cognition, ecology, evolution and visual stack."""
 from performance_tuning import install as install_performance
 
 install_performance()
@@ -17,6 +17,9 @@ install_survival_memory()
 
 from memory_enhancement import install as install_memory
 install_memory()
+
+from advanced_evolution import install as install_advanced
+install_advanced()
 
 import main
 
