@@ -157,7 +157,7 @@ Or use the supported expanded launcher:
 run.bat
 ```
 
-The launcher loads the performance, ecosystem, cognitive, hierarchical-behavior, survival-memory, and visual layers together.
+The launcher loads the performance, ecosystem, cognitive, hierarchical-behavior, survival-memory, long-term-memory, advanced-evolution, and visual layers together.
 
 For a fast GUI-free experiment:
 
@@ -165,10 +165,30 @@ For a fast GUI-free experiment:
 python main.py --headless --generations 20 --population 250 --seed 42
 ```
 
+## Advanced artificial-life layer
+
+`advanced_evolution.py` adds deeper emergent systems without giving robots privileged simulation knowledge:
+
+- **Cognitive place map** with remembered value, danger and uncertainty
+- **Habit/behavior chunking** that tracks which macro behaviors actually work
+- **Reflex vs deliberate control** so immediate threats can interrupt normal planning
+- **Personality plasticity** through mood, confidence, stress and inherited temperament
+- **Social/observational learning** from nearby successful individuals
+- **Family and relationship memory** carried imperfectly into descendants
+- **Home/territory formation** from repeated visits rather than a predefined territory map
+- **Dynamic ecology** with seasonal resource pressure and capped regrowth
+- **Weather** that changes survival costs and becomes a learned context
+- **Predator personality and adaptation** with stalker/sprinter/scout styles and prey-specific hesitation
+- **Persistent genealogy and life-event replay records**
+- **Repeatable headless trials** for comparing evolutionary experiments
+- **Experiment JSON export** for offline analysis
+
+The advanced layer is deliberately functional rather than cosmetic: the systems influence decisions, survival, inheritance, or measurable experiment outcomes.
+
 ## Controls
 
 - **Space** — pause/resume
-- **F** — fast mode
+- **F** — fast simulation mode
 - **N** — force next generation
 - **R** — reset experiment
 - **Esc** — quit
@@ -191,6 +211,11 @@ python main.py --headless --generations 20 --population 250 --seed 42
 13. Repeatable experiments ✅
 14. Large-population optimization 🚧
 15. Polished simulation laboratory 🚧
+16. Cognitive map + habits + reflex layer ✅
+17. Social/family/territory systems ✅
+18. Weather + seasons + dynamic ecology ✅
+19. Predator adaptation + genealogy/replay analytics ✅
+20. Repeatable experiment trials + export ✅
 
 ## Design principle
 
