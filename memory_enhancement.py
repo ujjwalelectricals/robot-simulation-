@@ -161,14 +161,13 @@ def _memory_bias(robot: Robot, world: World, bias: List[float]) -> List[float]:
     novelty = _novelty(robot)
     if novelty > 0.55 and robot.drives(world)[3] < 0.55:
         bias[0] += 0.10 * novelty
-    if world.tick % 20 == 0:
-        stale = [m for m in robot.long_memory if m.strength < 0.10 and world.tick - m.tick > 500]
-        for memory in stale[:max(0, len(robot.long_memory) - max(32, robot.genome.memory_capacity * 2))]:
-            try:
+    if world.tick % 20 == 0 and len(robot.long_memory) > max(48, robot.genome.memory_capacity * 2):
+        limit = max(32, robot.genome.memory_capacity * 2)
+        weak = sorted(robot.long_memory, key=lambda m: m.strength * m.importance)
+        for memory in weak[:max(0, len(robot.long_memory) - limit)]:
+            if memory.strength < 0.10 and world.tick - memory.tick > 500:
                 robot.long_memory.remove(memory)
                 robot.memory_forget_count += 1
-            except ValueError:
-                pass
     return bias
 
 
@@ -183,8 +182,8 @@ def _robot_step(self: Robot, world: World) -> None:
     _ORIGINALS["robot_step"](self, world)  # type: ignore[misc]
     if alive_before:
         reward = float(self.recent_reward)
-        cue = self.brain.last_cue or before_cue
         action = self.brain.last_action if self.brain.last_action is not None else before_action
+        cue = self.brain.last_cue or before_cue
         salient = abs(reward) >= 1.5 or self.food_eaten != before_food or self.water_found != before_water or self.damage_taken != before_damage
         if salient or world.tick % 8 == 0:
             _record(self, world, before_state or self.brain.last_state or "", cue, action, reward, getattr(self.brain, "current_goal", before_goal))
@@ -234,3 +233,7 @@ def install() -> None:
 def get_memory(robot: Robot) -> List[LongMemory]:
     _ensure(robot)
     return list(robot.long_memory)
+
+
+def consolidate(robot: Robot, world: World) -> float:
+    return _consolidate(robot, world)
