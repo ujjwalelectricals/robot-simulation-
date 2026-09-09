@@ -1,6 +1,5 @@
-"""Windows launcher for the full EVOLVE cognition, ecology, evolution and visual stack."""
+"""Windows launcher for the self-contained EVOLVE 3D laboratory."""
 from performance_tuning import install as install_performance
-
 install_performance()
 
 from ecosystem_expansion import install as install_ecosystem
@@ -21,10 +20,7 @@ install_memory()
 from advanced_evolution import install as install_advanced
 install_advanced()
 
-import main
-
-from visual_upgrade import install as install_visuals
-install_visuals()
+import main_3d as main
 
 if __name__ == "__main__":
     raise SystemExit(main.main())
